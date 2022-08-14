@@ -46,7 +46,9 @@
   "devDependencies": {
     "@rollup/plugin-commonjs": "^22.0.2",
     "@rollup/plugin-json": "^4.1.0",
+    "@types/inquirer": "^9.0.0",
     "@types/node": "^18.7.2",
+    "@types/shelljs": "^0.8.11",
     "@zerollup/ts-transform-paths": "^1.7.18",
     "rimraf": "^3.0.2",
     "rollup": "^2.77.3",
@@ -58,6 +60,10 @@
   },
   "dependencies": {
     "chalk": "^5.0.1",
-    "commander": "^9.4.0"
+    "commander": "^9.4.0",
+    "got": "^12.3.1",
+    "inquirer": "^9.1.0",
+    "ora": "^6.1.2",
+    "shelljs": "^0.8.5"
   }
 }

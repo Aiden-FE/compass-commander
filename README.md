@@ -11,7 +11,7 @@
 
 - [x] 项目环境搭建(支持Typescript,输出Node ESM包)
 - [x] 交互式收集模板创建选项
-- [ ] 脚手架自更新
+- [x] 脚手架自更新
 - [ ] 收集模板选项,生成或拉取目标模板,替换模板变量
 - [ ] 支持拉取自定义模板
 - [ ] 支持对内置模板进行插件的插拔
@@ -448,3 +448,142 @@ class LoggerService {
 
 export default new LoggerService()
 ```
+
+`pnpm add ora` 安装此依赖来支持loading的展示
+
+### 获取仓库的版本列表
+
+`pnpm add got` 安装基础的请求库
+
+首先准备一个获取指定仓库版本列表的方法
+`mkdir src/http` 创建文件夹
+
+`touch src/http/index.ts` 创建入口文件
+
+`touch src/http/github.ts` 创建一个专门用来放置github接口的文件夹
+
+`touch src/http/interfaces.ts` 创建一个存放http接口类型的文件
+
+导出一个github版本返回数据的接口类型,src/http/interfaces.ts内容如下
+```typescript
+/** Github 版本数据项 */
+export interface GithubReleases {
+  id: string
+  /** 发布名称 */
+  name: string
+  /** 标签名 */
+  tag_name: string
+  /** 发布描述 */
+  body: string
+  /** 是否草稿版 */
+  draft: boolean
+  /** 是否预发布 */
+  prerelease: boolean
+  created_at: string
+  published_at: string
+}
+```
+
+再导出一个获取github仓库版本列表的方法,src/http/github.ts内容如下
+```typescript
+import got from "got";
+import {GithubReleases} from "./interfaces";
+
+/**
+ * @description 获取Github的仓库版本列表
+ * @param username github用户名
+ * @param repo 仓库名
+ */
+export function getRepoReleasesInGithub(username: string, repo: string) {
+  return got.get(`https://api.github.com/repos/${username}/${repo}/releases`, {
+    headers: {
+      accept: 'application/vnd.github.v3+json',
+    }
+  }).json<GithubReleases[]>()
+    .then(result => {
+        // 过滤掉草稿版或者预发布版
+        return result.filter(release => !release.draft && !release.prerelease);
+    })
+}
+```
+
+再在http入口文件导出它,src/http/index.ts内容如下
+```typescript
+export * from './github';
+```
+
+### 实现最终更新逻辑
+
+先安装一些必要的依赖
+`pnpm add inquirer shelljs` 安装交互库及终端执行库
+`pnpm add @types/inquirer @types/shelljs -D` 安装相关的类型文件
+
+现在我们来根据前面讲的思路来实现这个逻辑,src/commands/update.cmd.ts文件内容现在如下
+```typescript
+import { Command } from 'commander';
+import ora from 'ora';
+import inquirer from 'inquirer';
+import shell from 'shelljs';
+import {Logger} from "~/services";
+import {getRepoReleasesInGithub} from "~/http";
+import compareVersion from "~/utils";
+import pkg from '../../package.json';
+
+export default (program: Command) => {
+  program.command('update')
+    .description('检查是否存在新版本内容')
+    .action(async () => {
+      const loading = ora();
+      loading.start(Logger.info('正在检查版本信息', false));
+      const releases = await getRepoReleasesInGithub('Aiden-FE', 'compass-commander')
+      const lastVersion = releases?.[0]?.name;
+      // 这里来检查当前是否是最新版本
+      if (!lastVersion || compareVersion(pkg.version, lastVersion) >= 0) {
+        loading.succeed(Logger.success('当前已是最新版本', false));
+        return;
+      }
+      loading.warn(Logger.warning('发现新版本', false));
+      // 与用户交互,确定用户的选择倾向
+      inquirer.prompt([{
+        type: 'confirm',
+        name: 'isUpdate',
+        message: '是否立即更新',
+        default: true,
+      }]).then((options) => {
+        if (!options.isUpdate) return;
+        // 不同用户的包管理工具可能大不一样,这里让其选择,后面可以研究自动匹配本地包管理工具
+        inquirer.prompt([{
+          type: 'list',
+          name: 'commandType',
+          message: '请选择对应工具更新',
+          choices: [
+            { name: 'npm', value: 'npm' },
+            { name: 'yarn', value: 'yarn' },
+            { name: 'pnpm', value: 'pnpm' },
+          ],
+        }]).then((opts) => {
+          const updateLoading = ora();
+          updateLoading.start(Logger.info('开始更新', false));
+          switch (opts.commandType) {
+            case 'npm':
+              shell.exec(`npm install -g ${pkg.name}`);
+              break;
+            case 'yarn':
+              shell.exec(`yarn global add ${pkg.name}`);
+              break;
+            case 'pnpm':
+              shell.exec(`pnpm add ${pkg.name} --global`);
+              break;
+            default:
+              break;
+          }
+          updateLoading.succeed(Logger.success('更新成功,当前已是最新版本.', false));
+        });
+      });
+    });
+};
+```
+
+现在我们可以来试一试效果了
+
+`compass update`
